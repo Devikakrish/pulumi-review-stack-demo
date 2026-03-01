@@ -28,18 +28,6 @@ jobs:
 
       - run: npm install
 
-      # 🔐 Azure Login FIRST (OIDC)
-      - name: Azure Login (OIDC)
-        uses: azure/login@v2
-        with:
-          client-id: 251ce246-3edb-4fd8-862c-61bc600a9e00
-          tenant-id: a97525bd-1b70-4278-b9c6-0e9ba38a6add
-          subscription-id: aa6feafd-ea7f-44ac-9263-9d064ebae6f4
-
-      # 🔍 Validate Login
-      - name: Check Azure Login
-        run: az account show
-
       # 🏗 Deploy Infrastructure
       - uses: pulumi/actions@v5
         with:
@@ -84,18 +72,6 @@ jobs:
           node-version: '18'
 
       - run: npm install
-
-      # 🔐 Azure Login (OIDC)
-      - name: Azure Login (OIDC)
-        uses: azure/login@v2
-        with:
-          client-id: 251ce246-3edb-4fd8-862c-61bc600a9e00
-          tenant-id: a97525bd-1b70-4278-b9c6-0e9ba38a6add
-          subscription-id: aa6feafd-ea7f-44ac-9263-9d064ebae6f4
-
-      # 🔍 Validate Login
-      - name: Check Azure Login
-        run: az account show
 
       # 🏗 Create / Update PR Stack (skip refresh for speed)
       - uses: pulumi/actions@v5
@@ -164,13 +140,6 @@ jobs:
           node-version: '18'
 
       - run: npm install
-
-      - name: Azure Login (OIDC)
-        uses: azure/login@v2
-        with:
-          client-id: 251ce246-3edb-4fd8-862c-61bc600a9e00
-          tenant-id: a97525bd-1b70-4278-b9c6-0e9ba38a6add
-          subscription-id: aa6feafd-ea7f-44ac-9263-9d064ebae6f4
 
       - uses: pulumi/actions@v5
         with:
