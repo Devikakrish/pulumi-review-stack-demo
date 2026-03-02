@@ -1,0 +1,173 @@
+name: Pulumi Node Review Stack Demo
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    types: [opened, synchronize, closed]
+
+jobs:
+
+  # =========================
+  # 🚀 Production Deployment
+  # =========================
+  deploy-main:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - run: npm install
+
+      # 🏗 Deploy Infrastructure
+      - uses: pulumi/actions@v5
+        with:
+          command: up
+          stack-name: prod
+        env:
+          PULUMI_ACCESS_TOKEN: ${{ secrets.PULUMI_ACCESS_TOKEN }}
+          NODE_OPTIONS: "--max-old-space-size=4096"
+
+      # 📦 Deploy Application Code
+      - name: Deploy app to Azure Web App
+        run: |
+          RG_NAME=$(pulumi stack output resourceGroupName -s prod)
+          APP_NAME=$(pulumi stack output name -s prod)
+
+          zip -r app.zip server.js package.json
+
+          az webapp deployment source config-zip \
+            --resource-group "$RG_NAME" \
+            --name "$APP_NAME" \
+            --src app.zip
+        env:
+          PULUMI_ACCESS_TOKEN: ${{ secrets.PULUMI_ACCESS_TOKEN }}
+
+  # =========================
+  # 🔍 Review Stack Deployment
+  # =========================
+  review-stack:
+    if: github.event_name == 'pull_request' && github.event.action != 'closed'
+    runs-on: ubuntu-latest
+
+    permissions:
+      id-token: write
+      contents: read
+      pull-requests: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - run: npm install
+
+      # 🔐 Azure Login (OIDC from ESC)
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      # 🏗 Create / Update PR Stack (skip refresh for speed)
+      - uses: pulumi/actions@v5
+        with:
+          command: up
+          stack-name: pr-${{ github.event.pull_request.number }}
+          upsert: true
+          args: --refresh=false
+        env:
+          PULUMI_ACCESS_TOKEN: ${{ secrets.PULUMI_ACCESS_TOKEN }}
+          NODE_OPTIONS: "--max-old-space-size=4096"
+
+      # 📦 Deploy App Code
+      - name: Deploy app to Azure Web App
+        run: |
+          STACK=pr-${{ github.event.pull_request.number }}
+
+          RG_NAME=$(pulumi stack output resourceGroupName -s $STACK)
+          APP_NAME=$(pulumi stack output name -s $STACK)
+
+          zip -r app.zip server.js package.json
+
+          az webapp deployment source config-zip \
+            --resource-group "$RG_NAME" \
+            --name "$APP_NAME" \
+            --src app.zip
+        env:
+          PULUMI_ACCESS_TOKEN: ${{ secrets.PULUMI_ACCESS_TOKEN }}
+
+      # 🔗 Get PR Stack URL
+      - id: outputs
+        run: |
+          STACK=pr-${{ github.event.pull_request.number }}
+          echo "url=$(pulumi stack output url -s $STACK)" >> $GITHUB_OUTPUT
+        env:
+          PULUMI_ACCESS_TOKEN: ${{ secrets.PULUMI_ACCESS_TOKEN }}
+
+      # 💬 Comment on PR with Review Stack URL
+      - uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: '## 🚀 Review Stack Ready\n\n🔗 **Preview URL:** ${{ steps.outputs.outputs.url }}\n\nThis environment is isolated from production.'
+            })
+  #Testing comment
+  # =========================
+  # 🧹 Cleanup After PR Closed
+  # =========================
+  cleanup:
+    if: github.event_name == 'pull_request' && github.event.action == 'closed'
+    runs-on: ubuntu-latest
+
+    permissions:
+      id-token: write
+      contents: read
+      pull-requests: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - run: npm install
+
+      - uses: pulumi/actions@v5
+        with:
+          command: destroy
+          stack-name: pr-${{ github.event.pull_request.number }}
+        env:
+          PULUMI_ACCESS_TOKEN: ${{ secrets.PULUMI_ACCESS_TOKEN }}
+        continue-on-error: true
+
+      - run: pulumi stack rm pr-${{ github.event.pull_request.number }} --yes
+        env:
+          PULUMI_ACCESS_TOKEN: ${{ secrets.PULUMI_ACCESS_TOKEN }}
+        continue-on-error: true
+
+      - uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: '## 🧹 Review Stack Cleaned Up\n\nResources destroyed and stack removed.'
+            });

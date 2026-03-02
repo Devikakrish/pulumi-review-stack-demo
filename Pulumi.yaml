@@ -1,0 +1,7 @@
+name: pulumi-review-stack-demo
+runtime: nodejs
+main: index.ts
+description: Simple Pulumi Review Stacks Demo
+environment:
+  imports:
+    - easyclaim/sandbox
